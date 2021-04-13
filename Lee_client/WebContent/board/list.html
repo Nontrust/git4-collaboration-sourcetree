@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>게시판 리스트</title>
+<link rel="stylesheet"
+	href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+<link rel="stylesheet"
+	href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+<link rel="stylesheet" href="/Lee_client/css/main.css">
+
+<!-- font-awesome w3school-->
+<link rel="stylesheet"
+	href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+
+<script
+	src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+<script
+	src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+<script
+	src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+<script 
+	src="/Lee_client/script/main.js"></script>
+<style>
+.modal {
+	text-align: center;
+}
+
+.modal-dialog {
+	display: inline-block;
+	text-align: left;
+	vertical-align: middle;
+}
+
+* {
+	border: 0;
+	margin: 0;
+}
+
+td a {
+	width: 100%;
+}
+</style>
+<script type="text/javascript">
+$(function(){
+	console.log('username='+username);
+	//파라미터 확인  ->  ?pageno=1&writer=surecha9
+	console.log('location.search='+location.search);
+	//서버가 보내줄 페이지 정보 저장 
+	let page=undefined;
+	let writer=undefined;
+	let queryString="pageno=1";
+	
+
+	if(location.search!=""){ //1페이지가 아니거나 writer가 있는 경우
+		console.log("1=",location.search); //?pageno=2
+		if(location.search.match(/writer/)){//?pageno=2&writer=aaaa
+			let idx=location.search.lastIndexOf("=");
+			writer=location.search.substring(idx+1);  //writer에 aaaa 저장
+		}
+		queryString=location.search.substr(1);//pageno=2
+			
+	}
+	$.ajax({
+		url:"http://121.65.47.76:5000/cha_board/api/boards",
+		method:"get",
+		data:queryString+"&apiKey="+apiKey
+	}).done((result, textStatus, request)=>{
+		console.log("result=", result);
+		page=result;
+		printData(); //게시글을 table 넣을 내용	 		
+	}).fail((xhr)=>printError(xhr, "결과를 출력할 수 없습니다."));
+
+	function printData() {
+		const boards = page.boards;
+		const pagination=getPagination(page); 
+		const $tbody=$('#boards tbody');
+		
+		$.each(boards, function(i, board){
+			console.log(board);
+			const $tr=$("<tr></tr>").appendTo($tbody);
+			$("<td>").text(board.bno).appendTo($tr);
+			
+			//두번째 td는 첨부파일이 있는 경우 클립모양 아이콘 출력. 없으면 공백
+			if(board.attachmentExist==true){
+				$("<td>").css("text-align","right").attr("title","첨부파일 있음")
+				.append('<i class="fa fa-paperclip"></i>')
+				.append($("<span></span>")).appendTo($tr);	
+			}else
+				$("<td>").appendTo($tr);
+			// 세번째 td는 제목을 출력하고 이동하는 링크를 건다
+			const $td = $("<td></td>").text(board.title).appendTo($tr);	
+			const $link = $("<a>").attr("href", "/Lee_client/board/read.html?bno=" + board.bno);
+			$($td).wrapInner($link);  //wrapInner: $td의 하위요소까지 $link로 감싼다. 
+			                          //wrap: $td를 $link로 감싼다.
+			//네번째 td: 글쓴이   
+			$("<td></td>").append($("<a></a>").attr("class","user")
+					              .attr("data-toggle","modal")
+					              .attr("data-target","#modal1")
+					              .attr("data-id", board.writer)  //aaa
+					              .text(board.writer)
+					              ).appendTo($tr);
+			//data-XX 속성은 내부값을 저장하기 쓴다. 출력은 $(this).data(id)
+			
+			//다섯번째 td는 날짜 출력, 오늘 작성한 글은 시분초를, 그이전글은 년월일 출력
+			const writeDate=board.writeDate.split(" ");
+			//console.log(writeDate[0]); //년월일
+			//console.log(writeDate[1]); //시분초
+			const today=getToday(); //직접 정의
+			if(today==writeDate[0]) //오늘 날짜면 시분초만 출력
+				$("<td>").text(writeDate[1]).appendTo($tr);
+			else    //오늘날짜가 아니면 년월일만 출력
+				$("<td>").text(writeDate[0]).appendTo($tr);
+			
+			//마지막 열: 조회수
+			$("<td>").text(board.readCnt).appendTo($tr);
+		});//each End
+		
+		//페이지네이션 출력
+		const $ul = $("#pagination");
+		
+		let li;   //생략시 li는 전역변수로 자동선언됨 
+		if(pagination.prev>0) {  //1번 페이지그룹 0, 2번 페이지그룹 1
+			li = $("<li>").text('이전').appendTo($ul);
+			if(queryString.match(/writer/))
+				li.wrapInner($("<a>")
+							.attr('href','/Lee_client/board/list.html?pageno='
+							+pagination.prev+'&writer='+writer));
+			else
+				li.wrapInner($("<a>")
+						 .attr('href','/Lee_client/board/list.html?pageno='
+					     + pagination.prev));
+		}
+		
+		for(let i=pagination.startPage; i<=pagination.endPage; i++) {
+			li = $("<li>").text(i).appendTo($ul);
+			if(page.pageno==i) //현재페이지인 경우
+				    //<!--button or a태그  class='active'를 추가하면 클릭할때 느낌이 산다.-->
+				    //<!--부트스트랩의 페이지네이션에서 a태그가 필요하기 때문에 삭제하면 페이징 깨짐-->
+				  //li.attr("class","active") //부트스트랩 버튼효과
+				  li.attr("class","active")
+				  .wrapInner($("<a></a>")
+				  .attr('href', '/Lee_client/board/list.html?pageno='+ i)
+				  .prop('disabled', true));  //<!--또는('href','#'))-->
+			else     //다른페이지 클릭시  
+				if(queryString.match(/writer/))
+					li.wrapInner($("<a>")
+							     .attr('href','/Lee_client/board/list.html?pageno='
+							                  +i+'&writer='+writer));
+				else
+					li.wrapInner($("<a>")
+							    .attr('href','/Lee_client/board/list.html'
+							                          +'?pageno='+ i));				
+		}
+		if(pagination.next>0) {
+			li = $("<li>").text('다음').appendTo($ul);
+			if(queryString.match(/writer/))
+				li.wrapInner($("<a>")
+						.attr('href','/Lee_client/board/list.html?pageno='
+						 +pagination.next+'&writer='+writer));
+			else
+				li.wrapInner($("<a>")
+						.attr('href', '/Lee_client/boa	rd/list.html?pageno='
+						                    + pagination.next));
+		}//if End
+	}//printData End
+	//5. 글쓰기 버튼 생성
+	$("<button>").addClass("btn btn-success custom")
+    .attr("id", "write").text("글쓰기")
+	 .appendTo("#write_button_area");
+	
+	$("#write").on("click", function() {
+		location.href = "/Lee_client/board/write.html";
+	});
+	//6.아이디 클릭하면 가입일보기, 게시물보기 컨텍스트 메뉴에 대한 처리
+	 // 6.1 게시물보기 기능을 실행하려면 사용자 아이디를 필요로 하므로 클릭한 아이디를 컨텍스트 메뉴로 복사
+	$("tbody").on("click", ".user", function(){
+		$(".modal-body li").attr("data-id", $(this).data("id"));
+	});
+	
+	$("#readById").on("click", function() {
+		location.href = "/cha_client/board/list.html?writer=" 
+				        + $(this).data("id");
+	});
+	$("#findJoinDate").on("click", function(e) {
+		//console.log("1=",$(this));//첫 이벤트에 만들고 갱신하지 않는 문제 발생
+		//console.log("3=",$(this).data("id")); //첫 이벤트에 추가한 아이디만 출력
+		console.dir(this); //갱신되는 이벤트 js객체
+		console.log("2=",this.getAttribute("data-id"));
+		console.log("id=", e.target.dataset.id);
+		
+		const params = {
+			//username : this.getAttribute("data-id"),
+			username : e.target.dataset.id,
+			apiKey : apiKey
+		};
+		$.ajax({
+			url: "http://121.65.47.76:5000/cha_board/api/users/joinDate",
+			method: "get",
+			data: params
+		}).done((result)=>alert(result)).fail((xhr)=>printError(xhr, 
+	        	                               "사용자를 찾을 수 없습니다"));
+	});//on End
+
+
+});//Ready End
+//페이징 계산식
+function getPagination(page){
+	const pageno = page.pageno;
+	const count = page.totalcount;
+	const pagesize = page.pagesize;
+	const blockSize = 5;
+	
+	let numOfBlock = parseInt((pageno-1)/blockSize);
+	let startPage = numOfBlock * blockSize + 1;
+	let endPage = startPage + blockSize - 1;
+	let countOfPage = count/pagesize + 1;
+	endPage = (endPage>countOfPage) ? countOfPage : endPage;
+	
+	let prev = startPage - 1;  // 2 3 4 5 6     7 8
+	let next = (endPage == countOfPage) ? 0 : endPage + 1;
+	              
+	return {
+		"startPage" : startPage,
+		"endPage" : endPage,
+		"prev" : prev,
+		"next" : next
+	}
+}//paging end
+
+//오늘 날짜를 yyyy-MM-dd 형식으로 리턴하는 함수
+function getToday(){
+	const today=new Date();
+	let dd=today.getDate();
+	let mm=today.getMonth()+1; //January is 0!
+	let yyyy=today.getFullYear();
+	if(dd<10)  //01-09
+		dd='0'+dd;
+	if(mm<10)
+		mm='0'+mm
+	return yyyy+"-"+mm+"-"+dd;	
+}
+
+</script>
+
+
+
+</head>
+<body>
+	<div id="page">
+		<header id="header"> </header>
+		<nav id="nav"></nav>
+		<div id="main">
+			<aside id="aside"></aside>
+			<section id="section">
+				<!-- 서버에서 받은 게시글 출력할 영역 -->
+				<div>
+					<table id="boards" class="table table-hover">
+						<colgroup>
+							<!-- 열너비 지정 -->
+ 								<col width="10%">
+							<col width="5%">
+							<col width="40%">
+							<col width="10%">
+							<col width="25%">
+							<col width="10%">
+						</colgroup>
+						<thead>
+							<tr>
+								<th>글번호</th>
+								<th>첨부</th>
+								<th>제목</th>
+								<th>글쓴이</th>
+								<th>날짜</th>
+								<th>조회수</th>
+							</tr>
+						</thead>
+						<tbody>
+						</tbody>
+					</table>
+				</div>
+
+				<!-- pagination 영역 -->
+				<div style="text-align: center">
+					<ul id="pagination" class="pagination"></ul>
+				</div>
+
+				<!-- 글쓰기 버튼 영역 -->
+				<div style="text-align: center" id="write_button_area">
+				
+				</div>
+
+				
+				
+				<!-- bootstrap 모달 박스:컨텍스트 메뉴를 출력할 영역 -->
+				<div id="modal1" class="modal fade" role="dialog">
+					<div class="modal-dialog modal-sm">
+						<div class="modal-content">
+							<div class="modal-body" id="target">
+								<ul>
+								<!-- data-dismiss: 모달창 사라지게함 -->
+									<li id="findJoinDate" data-dismiss="modal">가입일 보기</li>
+									<li id="readById" data-dismiss="modal">게시물 보기</li>
+								</ul>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+		</div>
+		<footer id="footer"> </footer>
+	</div>
+</body>
+
+</html>
